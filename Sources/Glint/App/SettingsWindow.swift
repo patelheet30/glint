@@ -269,6 +269,7 @@ private struct AboutPane: View {
             Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")")
                 .foregroundStyle(.secondary)
             Text("Fast, local-only screenshots for macOS.").font(.callout).foregroundStyle(.secondary)
+            Text("© 2026 Heet Patel · GNU GPL v3").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
         }
         .padding(40)
         .frame(maxWidth: .infinity)
