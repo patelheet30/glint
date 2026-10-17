@@ -98,6 +98,7 @@ struct Background: Equatable {
     var padding: CGFloat = 96, inset: CGFloat = 0, shadow: CGFloat = 30, corners: CGFloat = 12
     var align = 4 // 3×3 grid, row-major; 4 = centre
     var ratio: CGFloat? // width / height; nil = Auto
+    var frame: DeviceFrame? // replaces the plain card (inset and corners) with a window or device
 }
 
 struct Doc {
@@ -114,15 +115,16 @@ struct Doc {
     /// Canvas size and where the image sits on it (the background tool adds padding around it).
     var layout: (canvas: CGSize, origin: CGPoint) {
         guard let bg = background else { return (imageSize, .zero) }
-        let content = CGSize(width: imageSize.width + 2 * bg.inset, height: imageSize.height + 2 * bg.inset)
+        let fi = bg.frame?.insets(for: imageSize) ?? DeviceFrame.Insets(top: bg.inset, left: bg.inset, bottom: bg.inset, right: bg.inset)
+        let content = CGSize(width: imageSize.width + fi.left + fi.right, height: imageSize.height + fi.top + fi.bottom)
         var canvas = CGSize(width: content.width + 2 * bg.padding, height: content.height + 2 * bg.padding)
         if let r = bg.ratio {
             if canvas.width / canvas.height < r { canvas.width = canvas.height * r } else { canvas.height = canvas.width / r }
         }
         // Centre = equal padding; other cells push the card flush against that side.
         let ax = CGFloat(bg.align % 3) / 2, ay = CGFloat(bg.align / 3) / 2
-        let origin = CGPoint(x: ((canvas.width - content.width) * ax + bg.inset).rounded(),
-                             y: ((canvas.height - content.height) * ay + bg.inset).rounded())
+        let origin = CGPoint(x: ((canvas.width - content.width) * ax + fi.left).rounded(),
+                             y: ((canvas.height - content.height) * ay + fi.top).rounded())
         return (CGSize(width: canvas.width.rounded(), height: canvas.height.rounded()), origin)
     }
 
@@ -239,7 +241,9 @@ enum Render {
 
         // Image (rounded when it sits on a background).
         ctx.saveGState()
-        if let bg = doc.background, bg.corners > bg.inset { // image corners follow the card's, minus the inset
+        if let frame = doc.background?.frame {
+            ctx.addPath(frame.screenPath(imgRect)); ctx.clip()
+        } else if let bg = doc.background, bg.corners > bg.inset { // image corners follow the card's, minus the inset
             let r = bg.corners - bg.inset
             ctx.addPath(CGPath(roundedRect: imgRect, cornerWidth: r, cornerHeight: r, transform: nil)); ctx.clip()
         }
@@ -267,6 +271,7 @@ enum Render {
             ctx.fillPath(using: .evenOdd)
         }
         ctx.restoreGState()
+        doc.background?.frame?.drawOver(image: imgRect, in: ctx)
 
         for (i, it) in doc.items.enumerated() where i != hidden {
             if i == halo { drawHalo(it, doc: doc, in: ctx) }
@@ -486,6 +491,10 @@ enum Render {
         }
         ctx.restoreGState()
 
+        if let frame = bg.frame {
+            frame.drawBehind(image: CGRect(origin: origin, size: doc.imageSize), dark: frame.isDark(over: doc.image), shadow: bg.shadow, in: ctx)
+            return
+        }
         // The card: inset frame (edge color of the screenshot) with corners and a soft shadow.
         let card = CGRect(x: origin.x - bg.inset, y: origin.y - bg.inset,
                           width: doc.imageSize.width + 2 * bg.inset, height: doc.imageSize.height + 2 * bg.inset)

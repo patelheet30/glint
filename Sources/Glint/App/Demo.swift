@@ -10,6 +10,31 @@ enum Demo {
         if editor { Editor.open(card: card) }
     }
 
+    /// `Glint --render-samples <dir>`: exports the sample through the real renderer with each frame (light and dark),
+    /// headless, so features can be checked without opening windows.
+    static func renderSamples(to dir: URL) -> Never {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func write(_ doc: Doc, _ name: String) {
+            guard let img = Render.flatten(doc), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return }
+            try? png.write(to: dir.appending(path: name + ".png"))
+        }
+        let shot = sample()
+        for style in DeviceFrame.Style.allCases {
+            for look in [DeviceFrame.Appearance.light, .dark] {
+                var doc = Doc(image: shot, scale: 2)
+                var bg = Background(fill: .gradient(3)); bg.padding = 64
+                bg.frame = DeviceFrame(style: style, appearance: look, text: style == .browser ? "glint.app/features" : "Quarterly overview")
+                doc.background = bg
+                write(doc, "frame-\(style)-\(look)")
+            }
+        }
+        var phone = Doc(image: sample(width: 390, height: 844), scale: 2)
+        var bg = Background(fill: .gradient(7)); bg.frame = DeviceFrame(style: .iPhone); phone.background = bg
+        write(phone, "frame-iPhone-portrait")
+        print("wrote samples to \(dir.path)")
+        exit(0)
+    }
+
     /// A light "app window" with a sidebar, title, colored cards and text rows.
     static func sample(width: Int = 1280, height: Int = 800) -> CGImage {
         NSImage(size: NSSize(width: width, height: height), flipped: true) { r in

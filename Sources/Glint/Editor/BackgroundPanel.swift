@@ -3,7 +3,7 @@ import CoreImage
 
 /// The background tool's panel: None, gradients, wallpaper, blurred, plain colors,
 /// then padding / inset / shadow / corners sliders, a 3×3 alignment grid and a ratio popup.
-final class BackgroundPanel: NSView {
+final class BackgroundPanel: NSView, NSTextFieldDelegate {
     private weak var editor: Editor?
     var wantsPanelColor = false
     private let content = FlippedView()
@@ -11,6 +11,9 @@ final class BackgroundPanel: NSView {
     private var sliders: [(NSSlider, WritableKeyPath<Background, CGFloat>)] = []
     private var alignButtons: [EButton] = []
     private let ratio = NSPopUpButton()
+    private var frameButtons: [(DeviceFrame.Style?, EButton)] = []
+    private let frameLook = NSSegmentedControl(labels: ["Auto", "Light", "Dark"], trackingMode: .selectOne, target: nil, action: nil)
+    private let frameText = NSTextField()
     private static let ratios: [(String, CGFloat?)] = [("Auto", nil), ("1 : 1", 1), ("4 : 3", 4.0 / 3), ("3 : 2", 3.0 / 2), ("16 : 10", 1.6), ("16 : 9", 16.0 / 9), ("9 : 16", 9.0 / 16)]
 
     init(editor: Editor) {
@@ -62,6 +65,31 @@ final class BackgroundPanel: NSView {
         content.addSubview(none)
         noneButton = none
         y += 52
+
+        // Frame: none, or a window / device drawn around the screenshot.
+        y = section("Frame", y)
+        for (i, style) in ([nil] + DeviceFrame.Style.allCases.map { Optional($0) }).enumerated() {
+            let b = EButton(frame: CGRect(x: 12 + CGFloat(i) * 38, y: y, width: 34, height: 30),
+                            symbol: style?.symbol ?? "square.dashed", fill: .clear, tip: style?.title ?? "No frame") { [weak self] in
+                self?.pickFrame(style)
+            }
+            b.layer!.cornerRadius = 7
+            frameButtons.append((style, b))
+            content.addSubview(b)
+        }
+        y += 38
+        frameLook.frame = CGRect(x: 12, y: y, width: 226, height: 24)
+        frameLook.controlSize = .small
+        frameLook.target = self
+        frameLook.action = #selector(frameLookChanged)
+        content.addSubview(frameLook)
+        y += 32
+        frameText.frame = CGRect(x: 12, y: y, width: 226, height: 24)
+        frameText.controlSize = .small
+        frameText.font = .systemFont(ofSize: 12)
+        frameText.delegate = self
+        content.addSubview(frameText)
+        y += 40
 
         y = section("Gradients", y)
         for i in 0..<Render.gradients.count {
@@ -161,6 +189,34 @@ final class BackgroundPanel: NSView {
         content.addSubview(s)
     }
 
+    private func pickFrame(_ style: DeviceFrame.Style?) {
+        guard let editor else { return }
+        if editor.doc.background == nil {
+            guard let style else { return }
+            var bg = Background(fill: .gradient(0)); bg.frame = DeviceFrame(style: style)
+            editor.setBackground(bg); refresh()
+        } else {
+            set { bg in
+                guard let style else { bg.frame = nil; return }
+                var f = bg.frame ?? DeviceFrame(style: style)
+                f.style = style
+                bg.frame = f
+            }
+        }
+    }
+
+    @objc private func frameLookChanged() {
+        set { $0.frame?.appearance = DeviceFrame.Appearance(rawValue: self.frameLook.selectedSegment) ?? .auto }
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        set({ $0.frame?.text = self.frameText.stringValue }, coalesce: true)
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) { // one undo step per edit
+        set { $0.frame?.text = self.frameText.stringValue }
+    }
+
     @objc private func ratioChanged() { set { $0.ratio = Self.ratios[self.ratio.indexOfSelectedItem].1 } }
 
     /// Reflects the document's background in the controls.
@@ -173,6 +229,15 @@ final class BackgroundPanel: NSView {
         for (i, b) in alignButtons.enumerated() { b.fill = i == current.align && bg != nil ? NSColor(white: 1, alpha: 0.18) : .clear }
         ratio.selectItem(at: Self.ratios.firstIndex { $0.1 == current.ratio } ?? 0)
         ratio.isEnabled = bg != nil
+        let frame = bg?.frame
+        for (style, b) in frameButtons {
+            b.fill = style == frame?.style ? NSColor(white: 1, alpha: 0.18) : .clear
+        }
+        frameLook.selectedSegment = frame?.appearance.rawValue ?? 0
+        frameLook.isEnabled = frame != nil
+        frameText.isEnabled = frame?.style.hasText == true
+        frameText.placeholderString = frame?.style == .browser ? "Address (example.com)" : "Window title"
+        if frameText.currentEditor() == nil { frameText.stringValue = frame?.text ?? "" }
     }
 
     private func chooseWallpaper() {

@@ -96,7 +96,35 @@ enum SelfTest {
               "stitched image equals the page")
         check(st.add(page.cropping(to: CGRect(x: 0, y: 800, width: page.width, height: 400))!) == .lost, "jump too far is lost")
 
+        // Device frames: the image sits inside the frame's insets, and the canvas grows by them (plus padding).
+        let img400 = CGImage.blank(width: 800, height: 600) // 400 × 300 pt at 2×
+        func layout(_ style: DeviceFrame.Style?, padding: CGFloat = 0, ratio: CGFloat? = nil) -> (CGSize, CGPoint) {
+            var doc = Doc(image: img400, scale: 2)
+            var bg = Background(fill: .gradient(0)); bg.padding = padding; bg.ratio = ratio
+            bg.frame = style.map { DeviceFrame(style: $0) }
+            doc.background = bg
+            return doc.layout
+        }
+        check(layout(.macWindow) == (CGSize(width: 400, height: 328), CGPoint(x: 0, y: 28)), "frame: mac window")
+        check(layout(.browser, padding: 50) == (CGSize(width: 500, height: 444), CGPoint(x: 50, y: 94)), "frame: browser + padding")
+        check(layout(.iPhone) == (CGSize(width: 436, height: 336), CGPoint(x: 18, y: 18)), "frame: iPhone bezel")
+        let mb = layout(.macBook)
+        check(mb.1.y == 16 && mb.0.width > 480 && mb.0.height == (300 + 15.6 + 12 + 11.2).rounded(), "frame: MacBook lid + base \(mb)")
+        let sq = layout(.macWindow, ratio: 1)
+        check(sq.0.width == sq.0.height && sq.1.y == 28 + (sq.0.height - 328) / 2, "frame + 1:1 ratio stays centred")
+        check(layout(nil, padding: 10).1 == CGPoint(x: 10, y: 10), "no frame: unchanged")
+
         print(failures == 0 ? "self-test: all passed" : "self-test: \(failures) failed")
         exit(failures == 0 ? 0 : 1)
+    }
+}
+
+extension CGImage {
+    /// A plain white image, for layout tests.
+    static func blank(width: Int, height: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(.white); ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()!
     }
 }
