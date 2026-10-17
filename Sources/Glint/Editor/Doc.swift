@@ -114,47 +114,28 @@ struct Doc {
     var imageSize: CGSize { CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale) }
 
     /// Canvas size, where the image sits on it, and (with a share card) where its text goes.
-    struct Layout { var canvas: CGSize, origin: CGPoint, text: CGRect? }
+    struct Layout { var canvas: CGSize, origin: CGPoint, post: CGRect? = nil }
 
     var layout: (canvas: CGSize, origin: CGPoint) { let l = fullLayout; return (l.canvas, l.origin) }
 
     var fullLayout: Layout {
-        guard let bg = background else { return Layout(canvas: imageSize, origin: .zero, text: nil) }
-        let fi = bg.frame?.insets(for: imageSize) ?? DeviceFrame.Insets(top: bg.inset, left: bg.inset, bottom: bg.inset, right: bg.inset)
+        guard let bg = background else { return Layout(canvas: imageSize, origin: .zero) }
+        let plain = bg.card == nil ? bg.inset : 0 // in a post, the screenshot itself is the media
+        let fi = bg.frame?.insets(for: imageSize) ?? DeviceFrame.Insets(top: plain, left: plain, bottom: plain, right: plain)
         let content = CGSize(width: imageSize.width + fi.left + fi.right, height: imageSize.height + fi.top + fi.bottom)
 
-        // Share card: text above / below / beside the content, the whole group centred on a canvas of the preset's aspect.
+        // Share card: the content is the post's attached image; the post sits centred on the background.
         if let card = bg.card {
-            let p = bg.padding, gap = max(24, content.width * 0.05)
-            let text = card.attributed(reference: content.width, color: .white)
-            var textSize = CGSize.zero, group: CGSize
-            switch card.position {
-            case .above, .below:
-                if card.hasText { textSize = ShareCard.measure(text, width: content.width) }
-                group = CGSize(width: max(content.width, textSize.width), height: content.height + (card.hasText ? textSize.height + gap : 0))
-            case .beside:
-                if card.hasText { textSize = ShareCard.measure(text, width: content.width * 0.55) }
-                group = CGSize(width: content.width + (card.hasText ? textSize.width + gap : 0), height: max(content.height, textSize.height))
+            let post = card.layout(content: content)
+            var canvas = CGSize(width: post.size.width + 2 * bg.padding, height: post.size.height + 2 * bg.padding)
+            if let preset = card.preset {
+                let r = preset.pixels.width / preset.pixels.height
+                if canvas.width / canvas.height < r { canvas.width = canvas.height * r } else { canvas.height = canvas.width / r }
             }
-            var canvas = CGSize(width: group.width + 2 * p, height: group.height + 2 * p)
-            let r = card.preset.pixels.width / card.preset.pixels.height
-            if canvas.width / canvas.height < r { canvas.width = canvas.height * r } else { canvas.height = canvas.width / r }
-            let g = CGPoint(x: (canvas.width - group.width) / 2, y: (canvas.height - group.height) / 2)
-            var contentAt = g, textRect = CGRect.zero
-            switch card.position {
-            case .above:
-                textRect = CGRect(x: (canvas.width - content.width) / 2, y: g.y, width: content.width, height: textSize.height)
-                contentAt = CGPoint(x: (canvas.width - content.width) / 2, y: g.y + (card.hasText ? textSize.height + gap : 0))
-            case .below:
-                contentAt = CGPoint(x: (canvas.width - content.width) / 2, y: g.y)
-                textRect = CGRect(x: contentAt.x, y: g.y + content.height + gap, width: content.width, height: textSize.height)
-            case .beside:
-                textRect = CGRect(x: g.x, y: (canvas.height - textSize.height) / 2, width: textSize.width, height: textSize.height)
-                contentAt = CGPoint(x: g.x + (card.hasText ? textSize.width + gap : 0), y: (canvas.height - content.height) / 2)
-            }
+            let at = CGPoint(x: ((canvas.width - post.size.width) / 2).rounded(), y: ((canvas.height - post.size.height) / 2).rounded())
             return Layout(canvas: CGSize(width: canvas.width.rounded(), height: canvas.height.rounded()),
-                          origin: CGPoint(x: (contentAt.x + fi.left).rounded(), y: (contentAt.y + fi.top).rounded()),
-                          text: card.hasText ? textRect : nil)
+                          origin: CGPoint(x: (at.x + post.media.minX + fi.left).rounded(), y: (at.y + post.media.minY + fi.top).rounded()),
+                          post: CGRect(origin: at, size: post.size))
         }
 
         var canvas = CGSize(width: content.width + 2 * bg.padding, height: content.height + 2 * bg.padding)
@@ -165,7 +146,7 @@ struct Doc {
         let ax = CGFloat(bg.align % 3) / 2, ay = CGFloat(bg.align / 3) / 2
         let origin = CGPoint(x: ((canvas.width - content.width) * ax + fi.left).rounded(),
                              y: ((canvas.height - content.height) * ay + fi.top).rounded())
-        return Layout(canvas: CGSize(width: canvas.width.rounded(), height: canvas.height.rounded()), origin: origin, text: nil)
+        return Layout(canvas: CGSize(width: canvas.width.rounded(), height: canvas.height.rounded()), origin: origin)
     }
 
     func label(_ n: Int) -> String {
@@ -275,14 +256,7 @@ enum Render {
         NSGraphicsContext.current = ns
         defer { NSGraphicsContext.restoreGraphicsState() }
 
-        if let bg = doc.background {
-            drawBackground(bg, doc: doc, canvas: canvas, origin: origin, in: ctx)
-            if let card = bg.card, let rect = doc.fullLayout.text {
-                let content = doc.imageSize.width + (bg.frame.map { f in let i = f.insets(for: doc.imageSize); return i.left + i.right } ?? 2 * bg.inset)
-                card.attributed(reference: content, color: ShareCard.textColor(for: bg.fill))
-                    .draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading])
-            }
-        }
+        if let bg = doc.background { drawBackground(bg, doc: doc, canvas: canvas, origin: origin, in: ctx) }
         ctx.saveGState()
         ctx.translateBy(x: origin.x, y: origin.y)
 
@@ -290,6 +264,8 @@ enum Render {
         ctx.saveGState()
         if let frame = doc.background?.frame {
             ctx.addPath(frame.screenPath(imgRect)); ctx.clip()
+        } else if let card = doc.background?.card {
+            ctx.addPath(card.mediaPath(imgRect, u: card.layout(content: doc.imageSize).u)); ctx.clip()
         } else if let bg = doc.background, bg.corners > bg.inset { // image corners follow the card's, minus the inset
             let r = bg.corners - bg.inset
             ctx.addPath(CGPath(roundedRect: imgRect, cornerWidth: r, cornerHeight: r, transform: nil)); ctx.clip()
@@ -319,6 +295,9 @@ enum Render {
         }
         ctx.restoreGState()
         doc.background?.frame?.drawOver(image: imgRect, in: ctx)
+        if let card = doc.background?.card, doc.background?.frame == nil {
+            card.drawMediaBorder(imgRect, u: card.layout(content: doc.imageSize).u, in: ctx)
+        }
 
         for (i, it) in doc.items.enumerated() where i != hidden {
             if i == halo { drawHalo(it, doc: doc, in: ctx) }
@@ -548,6 +527,14 @@ enum Render {
         }
         ctx.restoreGState()
 
+        if let card = bg.card, let post = doc.fullLayout.post { // the post carries the shadow; a frame inside it doesn't
+            let i = bg.frame?.insets(for: doc.imageSize)
+            let content = CGSize(width: doc.imageSize.width + (i.map { $0.left + $0.right } ?? 0),
+                                 height: doc.imageSize.height + (i.map { $0.top + $0.bottom } ?? 0))
+            card.draw(at: post.origin, content: content, shadow: bg.shadow, in: ctx)
+            if let frame = bg.frame { frame.drawBehind(image: CGRect(origin: origin, size: doc.imageSize), dark: frame.isDark(over: doc.image), shadow: 0, in: ctx) }
+            return
+        }
         if let frame = bg.frame {
             frame.drawBehind(image: CGRect(origin: origin, size: doc.imageSize), dark: frame.isDark(over: doc.image), shadow: bg.shadow, in: ctx)
             return

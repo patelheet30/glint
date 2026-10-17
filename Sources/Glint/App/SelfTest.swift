@@ -114,23 +114,25 @@ enum SelfTest {
         check(sq.0.width == sq.0.height && sq.1.y == 28 + (sq.0.height - 328) / 2, "frame + 1:1 ratio stays centred")
         check(layout(nil, padding: 10).1 == CGPoint(x: 10, y: 10), "no frame: unchanged")
 
-        // Share cards: exports come out at the preset's exact pixels, and text never overlaps the screenshot.
+        // Post cards: the screenshot is the post's media at full size; the post never overlaps it; presets export exactly.
+        for platform in ShareCard.Platform.allCases {
+            var doc = Doc(image: img400, scale: 2)
+            var bg = Background(fill: .gradient(0)); bg.padding = 40
+            bg.card = ShareCard(platform: platform, name: "A", handle: "b", text: String(repeating: "A long post that wraps. ", count: 8))
+            doc.background = bg
+            let l = doc.fullLayout, post = l.post ?? .zero
+            let media = CGRect(origin: l.origin, size: CGSize(width: 400, height: 300))
+            let card = bg.card!.layout(content: CGSize(width: 400, height: 300))
+            check(post.contains(media) && card.media.size == media.size, "post holds the screenshot at full size (\(platform))")
+            check(card.text == .zero || !card.text.intersects(card.media), "post text clear of the media (\(platform))")
+            check(platform.fullBleed ? media.width == post.width : media.width < post.width, "media width rule (\(platform))")
+            check(abs(l.canvas.width - post.width - 80) <= 0.5 && abs(l.canvas.height - post.height - 80) <= 0.5, "fit canvas = post + padding (\(platform))")
+        }
         for preset in ShareCard.Preset.allCases {
             var doc = Doc(image: img400, scale: 2)
-            var bg = Background(fill: .gradient(0)); bg.card = ShareCard(title: "Hello", preset: preset)
+            var bg = Background(fill: .gradient(0)); bg.card = ShareCard(text: "Hello", preset: preset)
             doc.background = bg
-            let out = Render.flatten(doc)
-            check(out.map { CGSize(width: $0.width, height: $0.height) } == preset.pixels, "card export size \(preset)")
-        }
-        for pos in ShareCard.Position.allCases {
-            var doc = Doc(image: img400, scale: 2)
-            var bg = Background(fill: .gradient(0)); bg.frame = DeviceFrame(style: .browser)
-            bg.card = ShareCard(title: String(repeating: "A long headline that has to wrap ", count: 4), subtitle: "@handle", position: pos)
-            doc.background = bg
-            let l = doc.fullLayout, text = l.text ?? .zero
-            let shot = CGRect(x: l.origin.x, y: l.origin.y - DeviceFrame.browserBar, width: 400, height: 300 + DeviceFrame.browserBar)
-            check(!text.intersects(shot) && CGRect(origin: .zero, size: l.canvas).contains(text.insetBy(dx: 1, dy: 1)), "card text clear of screenshot (\(pos))")
-            check(abs(l.canvas.width / l.canvas.height - 16.0 / 9) < 0.01, "card canvas keeps the preset aspect (\(pos))")
+            check(Render.flatten(doc).map { CGSize(width: $0.width, height: $0.height) } == preset.pixels, "post export size \(preset)")
         }
 
         // Code cards: the tokenizer and language detection.

@@ -5,7 +5,7 @@ Next release: **v0.3.0**, which turns screenshots into ready-to-share images. Al
 | # | Feature | Effort | Touches |
 |---|---|---|---|
 | 1 | Device Frames | M | `Doc.swift` (`Background.frame`, layout, render), `Editor/Frames.swift` (new), `BackgroundPanel` |
-| 2 | Share Cards | M | `Doc.swift` (`Background.card`), `Editor/ShareCard.swift` (new), `BackgroundPanel`, export |
+| 2 | Share Cards (reworked into social post mockups, 2026-10-17) | M | `Doc.swift` (`Background.card`), `Editor/ShareCard.swift` (new), `BackgroundPanel`, export |
 | 3 | Code Cards | M–L | `Editor/CodeCard.swift` (new: window + highlighter + renderer), menu bar, Capture Bar |
 
 Then: tag `v0.3.0`. The release workflow builds, notarises and publishes the DMG.

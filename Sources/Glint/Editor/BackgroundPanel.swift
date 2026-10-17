@@ -14,10 +14,11 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
     private var frameButtons: [(DeviceFrame.Style?, EButton)] = []
     private let frameLook = NSSegmentedControl(labels: ["Auto", "Light", "Dark"], trackingMode: .selectOne, target: nil, action: nil)
     private let frameText = NSTextField()
-    private let cardSize = NSPopUpButton()
-    private let cardTitle = NSTextField(), cardSubtitle = NSTextField()
-    private let cardPosition = NSSegmentedControl(labels: ["Above", "Below", "Beside"], trackingMode: .selectOne, target: nil, action: nil)
-    private let cardStyle = NSSegmentedControl(labels: ShareCard.TextStyle.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
+    private let cardPlatform = NSPopUpButton(), cardSize = NSPopUpButton()
+    private let cardTheme = NSSegmentedControl(labels: ["Light", "Dark"], trackingMode: .selectOne, target: nil, action: nil)
+    private let cardName = NSTextField(), cardHandle = NSTextField(), cardText = NSTextField()
+    private let cardCounts = NSButton(checkboxWithTitle: "Show likes and counts", target: nil, action: nil)
+    private var cardAvatar: EButton!
     private static let ratios: [(String, CGFloat?)] = [("Auto", nil), ("1 : 1", 1), ("4 : 3", 4.0 / 3), ("3 : 2", 3.0 / 2), ("16 : 10", 1.6), ("16 : 9", 16.0 / 9), ("9 : 16", 9.0 / 16)]
 
     init(editor: Editor) {
@@ -95,33 +96,57 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
         content.addSubview(frameText)
         y += 40
 
-        // Card: title + subtitle laid out with the screenshot at an exact social / README size.
-        y = section("Card", y)
-        cardSize.frame = CGRect(x: 10, y: y - 2, width: 230, height: 26)
-        cardSize.addItem(withTitle: "Off")
-        ShareCard.Preset.allCases.forEach { cardSize.addItem(withTitle: $0.label) }
-        cardSize.target = self
-        cardSize.action = #selector(cardSizeChanged)
-        content.addSubview(cardSize)
+        // Card: the screenshot as the image in a social post (X, LinkedIn, Instagram, Bluesky).
+        y = section("Post", y)
+        cardPlatform.frame = CGRect(x: 10, y: y - 2, width: 150, height: 26)
+        cardPlatform.addItem(withTitle: "Off")
+        ShareCard.Platform.allCases.forEach { cardPlatform.addItem(withTitle: $0.title) }
+        cardPlatform.target = self
+        cardPlatform.action = #selector(cardPlatformChanged)
+        content.addSubview(cardPlatform)
+        cardTheme.frame = CGRect(x: 164, y: y, width: 74, height: 22)
+        cardTheme.controlSize = .small
+        cardTheme.target = self
+        cardTheme.action = #selector(cardOptionChanged)
+        content.addSubview(cardTheme)
         y += 32
-        for (field, placeholder) in [(cardTitle, "Title"), (cardSubtitle, "Subtitle or @handle")] {
-            field.frame = CGRect(x: 12, y: y, width: 226, height: 24)
+        cardAvatar = EButton(frame: CGRect(x: 12, y: y, width: 54, height: 54), symbol: "person.crop.circle.badge.plus", fill: Palette.button,
+                             tip: "Choose avatar (⌥-click to remove)") { [weak self] in self?.chooseAvatar() }
+        cardAvatar.layer!.cornerRadius = 27
+        cardAvatar.layer!.masksToBounds = true
+        content.addSubview(cardAvatar)
+        for (i, (field, placeholder)) in [(cardName, "Name"), (cardHandle, "@handle")].enumerated() {
+            field.frame = CGRect(x: 74, y: y + CGFloat(i) * 30, width: 164, height: 24)
             field.controlSize = .small
             field.font = .systemFont(ofSize: 12)
             field.placeholderString = placeholder
             field.delegate = self
             content.addSubview(field)
-            y += 30
         }
-        for seg in [cardPosition, cardStyle] {
-            seg.frame = CGRect(x: 12, y: y, width: 226, height: 24)
-            seg.controlSize = .small
-            seg.target = self
-            seg.action = #selector(cardOptionChanged)
-            content.addSubview(seg)
-            y += 30
-        }
-        y += 10
+        y += 62
+        cardText.frame = CGRect(x: 12, y: y, width: 226, height: 64)
+        cardText.controlSize = .small
+        cardText.font = .systemFont(ofSize: 12)
+        cardText.placeholderString = "What's happening? (the post's text)"
+        cardText.usesSingleLineMode = false
+        cardText.cell?.wraps = true
+        cardText.cell?.isScrollable = false
+        cardText.delegate = self
+        content.addSubview(cardText)
+        y += 72
+        cardCounts.frame = CGRect(x: 12, y: y, width: 226, height: 18)
+        cardCounts.controlSize = .small
+        cardCounts.target = self
+        cardCounts.action = #selector(cardOptionChanged)
+        content.addSubview(cardCounts)
+        y += 26
+        cardSize.frame = CGRect(x: 10, y: y - 2, width: 230, height: 26)
+        cardSize.addItem(withTitle: "Size: Fit the post")
+        ShareCard.Preset.allCases.forEach { cardSize.addItem(withTitle: $0.label) }
+        cardSize.target = self
+        cardSize.action = #selector(cardOptionChanged)
+        content.addSubview(cardSize)
+        y += 40
 
         y = section("Gradients", y)
         for i in 0..<Render.gradients.count {
@@ -248,28 +273,54 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
         let field = obj.object as? NSTextField
         set({ bg in
             if field === self.frameText { bg.frame?.text = self.frameText.stringValue }
-            if field === self.cardTitle { bg.card?.title = self.cardTitle.stringValue }
-            if field === self.cardSubtitle { bg.card?.subtitle = self.cardSubtitle.stringValue }
+            if field === self.cardName { bg.card?.name = self.cardName.stringValue }
+            if field === self.cardHandle { bg.card?.handle = self.cardHandle.stringValue }
+            if field === self.cardText { bg.card?.text = self.cardText.stringValue }
         }, coalesce: coalesce)
+        if !coalesce { editor?.doc.background?.card?.remember() }
     }
 
-    @objc private func cardSizeChanged() {
+    /// Return in the post text adds a line instead of ending editing.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard control === cardText, selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+        textView.insertNewlineIgnoringFieldEditor(nil)
+        return true
+    }
+
+    private func chooseAvatar() {
+        guard editor?.doc.background?.card != nil else { return }
+        if NSEvent.modifierFlags.contains(.option) { set { $0.card?.avatar = nil }; editor?.doc.background?.card?.remember(); return }
+        let p = NSOpenPanel()
+        p.allowedContentTypes = [.image]
+        guard p.runModal() == .OK, let url = p.url, let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let img = CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                                                   kCGImageSourceThumbnailMaxPixelSize: 256,
+                                                                   kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { return }
+        set { $0.card?.avatar = img }
+        editor?.doc.background?.card?.remember()
+    }
+
+    @objc private func cardPlatformChanged() {
         guard let editor else { return }
-        let i = cardSize.indexOfSelectedItem
-        guard i > 0, let preset = ShareCard.Preset(rawValue: i - 1) else { return set { $0.card = nil } }
+        let i = cardPlatform.indexOfSelectedItem
+        guard i > 0, let platform = ShareCard.Platform(rawValue: i - 1) else { return set { $0.card = nil } }
         if editor.doc.background == nil {
-            var bg = Background(fill: .gradient(0)); bg.card = ShareCard(preset: preset)
+            var bg = Background(fill: .gradient(0)); bg.padding = 64
+            var c = ShareCard.remembered(); c.platform = platform; bg.card = c
             editor.setBackground(bg); refresh()
         } else {
-            set { bg in var c = bg.card ?? ShareCard(); c.preset = preset; bg.card = c }
+            set { bg in var c = bg.card ?? ShareCard.remembered(); c.platform = platform; bg.card = c }
         }
+        editor.doc.background?.card?.remember()
     }
 
     @objc private func cardOptionChanged() {
         set { bg in
-            bg.card?.position = ShareCard.Position(rawValue: self.cardPosition.selectedSegment) ?? .above
-            bg.card?.style = ShareCard.TextStyle(rawValue: self.cardStyle.selectedSegment) ?? .bold
+            bg.card?.theme = ShareCard.Theme(rawValue: self.cardTheme.selectedSegment) ?? .light
+            bg.card?.showCounts = self.cardCounts.state == .on
+            bg.card?.preset = self.cardSize.indexOfSelectedItem > 0 ? ShareCard.Preset(rawValue: self.cardSize.indexOfSelectedItem - 1) : nil
         }
+        editor?.doc.background?.card?.remember()
     }
 
     @objc private func ratioChanged() { set { $0.ratio = Self.ratios[self.ratio.indexOfSelectedItem].1 } }
@@ -294,13 +345,15 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
         frameText.placeholderString = frame?.style == .browser ? "Address (example.com)" : "Window title"
         if frameText.currentEditor() == nil { frameText.stringValue = frame?.text ?? "" }
         let card = bg?.card
-        cardSize.selectItem(at: card.map { $0.preset.rawValue + 1 } ?? 0)
-        for c in [cardTitle, cardSubtitle] as [NSControl] { c.isEnabled = card != nil }
-        for c in [cardPosition, cardStyle] { c.isEnabled = card != nil }
-        if cardTitle.currentEditor() == nil { cardTitle.stringValue = card?.title ?? "" }
-        if cardSubtitle.currentEditor() == nil { cardSubtitle.stringValue = card?.subtitle ?? "" }
-        cardPosition.selectedSegment = card?.position.rawValue ?? 0
-        cardStyle.selectedSegment = card?.style.rawValue ?? 0
+        cardPlatform.selectItem(at: card.map { $0.platform.rawValue + 1 } ?? 0)
+        cardSize.selectItem(at: card?.preset.map { $0.rawValue + 1 } ?? 0)
+        cardTheme.selectedSegment = card?.theme.rawValue ?? 0
+        cardCounts.state = card?.showCounts == true ? .on : .off
+        for c in [cardTheme, cardName, cardHandle, cardText, cardCounts, cardSize, cardAvatar] as [NSControl] { c.isEnabled = card != nil }
+        cardHandle.placeholderString = card?.platform.handlePlaceholder ?? "@handle"
+        for (f, v) in [(cardName, card?.name), (cardHandle, card?.handle), (cardText, card?.text)] where f.currentEditor() == nil { f.stringValue = v ?? "" }
+        if let a = card?.avatar { cardAvatar.image = NSImage(cgImage: a, size: NSSize(width: 54, height: 54)); cardAvatar.imageScaling = .scaleAxesIndependently }
+        else { cardAvatar.image = NSImage(systemSymbolName: "person.crop.circle.badge.plus", accessibilityDescription: nil) }
     }
 
     private func chooseWallpaper() {

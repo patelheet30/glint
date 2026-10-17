@@ -28,15 +28,25 @@ enum Demo {
                 write(doc, "frame-\(style)-\(look)")
             }
         }
-        for (preset, pos, style) in [(ShareCard.Preset.x, ShareCard.Position.above, ShareCard.TextStyle.bold),
-                                     (.openGraph, .beside, .editorial), (.square, .below, .mono), (.story, .above, .bold)] {
-            var doc = Doc(image: shot, scale: 2)
-            var bg = Background(fill: .gradient(preset.rawValue + 9)); bg.padding = 80
-            bg.frame = DeviceFrame(style: .macWindow, appearance: .light, text: "Quarterly overview")
-            bg.card = ShareCard(title: "Quarterly numbers, at a glance", subtitle: "@glintapp · new in v0.3", preset: preset, position: pos, style: style)
-            doc.background = bg
-            write(doc, "card-\(preset)-\(pos)")
+        let fixed = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 17, hour: 10, minute: 42))!
+        for platform in ShareCard.Platform.allCases {
+            for theme in ShareCard.Theme.allCases {
+                var doc = Doc(image: shot, scale: 2)
+                var bg = Background(fill: .gradient(platform.rawValue + 9)); bg.padding = 64
+                bg.card = ShareCard(platform: platform, theme: theme, name: "Heet Patel",
+                                    handle: platform == .linkedIn ? "Building Glint · macOS screenshots" : "glintapp",
+                                    text: "Glint 0.3 is out: device frames, share cards and code cards. Here's the quarterly dashboard in it 👇",
+                                    showCounts: theme == .dark, date: fixed)
+                doc.background = bg
+                write(doc, "post-\(platform)-\(theme)")
+            }
         }
+        var framed = Doc(image: shot, scale: 2)
+        var fb = Background(fill: .gradient(4)); fb.padding = 64
+        fb.frame = DeviceFrame(style: .browser, appearance: .light, text: "glint.app")
+        fb.card = ShareCard(platform: .x, name: "Glint", handle: "glintapp", text: "Frames work inside posts too.", preset: .x, date: fixed)
+        framed.background = fb
+        write(framed, "post-x-framed-preset")
         let swift = """
         import SwiftUI
 
