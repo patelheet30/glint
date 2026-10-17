@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let history = ActionItem("Capture History…", mods: []) { [weak self] in self?.perform(.history) }
         actionItems[.history] = history
         menu.addItem(history)
+        menu.addItem(ActionItem("New Code Card…", mods: []) { CodeCardWindow.shared.show() })
         menu.addItem(ActionItem("Close All Overlays", mods: []) { PopupManager.shared.closeAll() })
         menu.addItem(.separator())
         menu.addItem(ActionItem("Settings…", key: ",") { SettingsWindow.show() })
@@ -88,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(n)) { [weak self] in
                 self?.run("capture bar timer") { try await Capturer.capture(globalRect: r) }
             }
+        case .code: CodeCardWindow.shared.show()
         case .text(let r):
             Task { @MainActor in
                 do { OCR.copyText(from: try await Capturer.capture(globalRect: r)) } catch { log("capture bar text failed: \(error)") }

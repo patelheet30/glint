@@ -133,6 +133,26 @@ enum SelfTest {
             check(abs(l.canvas.width / l.canvas.height - 16.0 / 9) < 0.01, "card canvas keeps the preset aspect (\(pos))")
         }
 
+        // Code cards: the tokenizer and language detection.
+        func kinds(_ code: String, _ lang: CodeLanguage) -> [String] {
+            CodeHighlighter.tokens(code, lang).filter { $0.kind != .plain }.map { "\($0.kind):\($0.text)" }
+        }
+        check(kinds(#"let url = "http://x" // note"#, .swift) == ["keyword:let", #"string:"http://x""#, "comment:// note"], "code: comment marker inside a string")
+        check(kinds(#"print("a\"b")"#, .python) == ["function:print", #"string:"a\"b""#], "code: escaped quote")
+        check(kinds("const s = `a ${`b ${c}`} d`;", .javascript) == ["keyword:const", "string:`a ${`b ${c}`} d`"], "code: nested template literal")
+        check(kinds("letter iffy return", .swift) == ["keyword:return"], "code: keywords only as whole words")
+        check(kinds("struct Point { var x = 42 }", .swift) == ["keyword:struct", "type:Point", "keyword:var", "number:42"], "code: types and numbers")
+        check(kinds(#"{"name": "Glint", "ok": true}"#, .json) == [#"type:"name""#, #"string:"Glint""#, #"type:"ok""#, "keyword:true"], "code: JSON keys")
+        check(kinds("SELECT id FROM item -- all", .sql) == ["keyword:SELECT", "keyword:FROM", "comment:-- all"], "code: SQL")
+        check(CodeLanguage.detect("import SwiftUI\nstruct A: View { var body: some View { Text(\"x\") } }") == .swift, "detect swift")
+        check(CodeLanguage.detect("def add(a, b):\n    return a + b\n\nif x:\n    print(self.y)") == .python, "detect python")
+        check(CodeLanguage.detect("{\n  \"name\": \"glint\"\n}") == .json, "detect json")
+        check(CodeLanguage.detect("#!/bin/zsh\necho hi") == .shell, "detect shell")
+        check(CodeLanguage.detect("package main\n\nfunc main() { x := 1 }") == .go, "detect go")
+        check(CodeLanguage.detect("hello there") == .plain, "detect plain")
+        let card = CodeRenderer.render("a\n" + String(repeating: "x", count: 130), CodeCardOptions(lineNumbers: true, wrap: 60))
+        check(card.map { $0.height > $0.width / 4 } == true, "code: long lines wrap into more rows")
+
         print(failures == 0 ? "self-test: all passed" : "self-test: \(failures) failed")
         exit(failures == 0 ? 0 : 1)
     }

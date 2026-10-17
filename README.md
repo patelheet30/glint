@@ -14,6 +14,9 @@ Glint lives in your menu bar. Take a screenshot and it shows up as a small popup
   - Rectangles, ellipses, lines, arrows (standard, fancy, curved, double), text in several styles, pixelate and blur, spotlight, numbered counters, pencil and marker.
   - Crop and resize.
   - A background tool for padding, gradients, wallpapers, shadow and rounded corners.
+- **Device frames**: put a capture inside a Mac window (with its title), a browser (with an address bar), a MacBook, an iPhone or an iPad, in light or dark. Frames are drawn as vectors, so they stay sharp at any size.
+- **Share cards**: add a title and @handle above, below or beside the screenshot, and export at exactly X/Twitter, LinkedIn, Open Graph, Square, Story or README-banner size.
+- **Code cards**: paste code and get a syntax-coloured window image (Swift, JavaScript/TypeScript, Python, Go, Rust, JSON, Shell, HTML/CSS, SQL, auto-detected) in four themes. It opens in the editor like any capture, so frames and share cards work on it too.
 - **Pins**: float any screenshot above your windows. Zoom it, change its opacity, or lock it so clicks pass through.
 - **Text recognition**: select an area and its text is copied to your clipboard.
 - **Scrolling capture**: scroll by hand or turn on Auto-Scroll. Glint stitches the frames into one tall image and shows a live preview.

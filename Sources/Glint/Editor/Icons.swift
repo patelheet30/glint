@@ -157,6 +157,12 @@ enum Icon {
             line(ctx, [(1.8, 6.5), (16.2, 6.5)])
             ctx.fillEllipse(in: CGRect(x: 3.6, y: 3.7, width: 1.6, height: 1.6)); ctx.fillEllipse(in: CGRect(x: 6.2, y: 3.7, width: 1.6, height: 1.6))
         },
+        // Code card: angle brackets around a slash.
+        "code": { ctx in
+            ctx.setLineWidth(modeStroke)
+            line(ctx, [(5.6, 4.6), (1.8, 9), (5.6, 13.4)]); line(ctx, [(12.4, 4.6), (16.2, 9), (12.4, 13.4)])
+            line(ctx, [(10.4, 3.6), (7.6, 14.4)])
+        },
         "timer": { ctx in
             ctx.setLineWidth(modeStroke)
             ctx.strokeEllipse(in: CGRect(x: 2.5, y: 3.5, width: 13, height: 13))

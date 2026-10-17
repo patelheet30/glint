@@ -37,6 +37,29 @@ enum Demo {
             doc.background = bg
             write(doc, "card-\(preset)-\(pos)")
         }
+        let swift = """
+        import SwiftUI
+
+        /// A tiny counter, to show off Glint's code cards.
+        struct Counter: View {
+            @State private var count = 0
+            let step: Int = 2
+
+            var body: some View {
+                Button("Tapped \\(count) times") { count += step } // nice
+                    .padding(.horizontal, 16)
+            }
+        }
+        """
+        for (i, t) in CodeTheme.all.enumerated() {
+            var o = CodeCardOptions(); o.theme = i; o.title = "Counter.swift"
+            if let img = CodeRenderer.render(swift, o), let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
+                try? png.write(to: dir.appending(path: "code-\(t.name.replacingOccurrences(of: " ", with: "-")).png"))
+            }
+        }
+        if let ui = CodeCardWindow.shared.snapshot(code: swift), let png = ui.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appending(path: "ui-code-window.png"))
+        }
         var phone = Doc(image: sample(width: 390, height: 844), scale: 2)
         var bg = Background(fill: .gradient(7)); bg.frame = DeviceFrame(style: .iPhone); phone.background = bg
         write(phone, "frame-iPhone-portrait")

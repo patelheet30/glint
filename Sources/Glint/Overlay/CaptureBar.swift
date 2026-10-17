@@ -4,7 +4,7 @@ import AppKit
 /// pill, remembered area pre-selected, white L brackets after release, and a control bar ~37pt below the selection.
 /// Return captures the area, Esc cancels.
 final class CaptureBar {
-    enum Choice { case area(CGRect), fullscreen(CGRect), window, timer(CGRect), text(CGRect), scrolling(CGRect) }
+    enum Choice { case area(CGRect), fullscreen(CGRect), window, timer(CGRect), text(CGRect), scrolling(CGRect), code }
 
     private static var current: CaptureBar?
     private var overlays: [AIOWindow] = []
@@ -153,7 +153,7 @@ final class AIOView: NSView {
 
     private func buildBar() {
         // One panel: capture modes, a divider, then the size fields and expand.
-        let modes = NSView(frame: CGRect(x: 0, y: 0, width: 6 * 64 + 8 + 1 + 186, height: 56))
+        let modes = NSView(frame: CGRect(x: 0, y: 0, width: 7 * 64 + 8 + 1 + 186, height: 56))
         panel(modes)
         modes.layer!.cornerRadius = 14
         let items: [(String, String, () -> Void)] = [
@@ -163,13 +163,14 @@ final class AIOView: NSView {
             ("Scrolling", "scrolling", { [unowned self] in if let s = self.owner.selection { self.owner.finish(.scrolling(s)) } }),
             ("Timer", "timer", { [unowned self] in if let s = self.owner.selection { self.owner.finish(.timer(s)) } }),
             ("Text", "ocr", { [unowned self] in if let s = self.owner.selection { self.owner.finish(.text(s)) } }),
+            ("Code", "code", { [unowned self] in self.owner.finish(.code) }),
         ]
         for (i, (title, icon, action)) in items.enumerated() {
             let b = ModeButton(frame: CGRect(x: 4 + CGFloat(i) * 64, y: 4, width: 64, height: 48), title: title, icon: icon, action: action)
             b.highlighted = i == 0
             modes.addSubview(b)
         }
-        let divider = NSView(frame: CGRect(x: 6 * 64 + 8, y: 12, width: 1, height: 32))
+        let divider = NSView(frame: CGRect(x: 7 * 64 + 8, y: 12, width: 1, height: 32))
         divider.wantsLayer = true
         divider.layer!.backgroundColor = Palette.panelBorder.cgColor
         modes.addSubview(divider)
