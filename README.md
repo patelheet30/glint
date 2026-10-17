@@ -42,12 +42,7 @@ In the editor, single letters pick tools: V select, R rectangle, F filled rectan
 
 Download the latest `Glint-<version>.dmg` from [Releases](../../releases) and drag Glint to Applications.
 
-Release builds are signed ad hoc and not notarized, so macOS blocks the first launch. Right-click Glint → **Open**, or run:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Glint.app
-```
-
+Releases from v0.2.2 on are signed with a Developer ID and notarized by Apple, so they open like any other app.
 On first use, Glint asks for:
 - **Screen Recording**, to take screenshots.
 - **Accessibility**, for the popup's hover shortcuts, swipe-to-dismiss, Auto-Scroll, and Esc/Return in the overlays.
@@ -61,13 +56,16 @@ You only need the Xcode Command Line Tools; full Xcode isn't required.
 ```bash
 ./build.sh        # builds build/Glint.app
 ./build.sh run    # builds and relaunches it
+./build.sh release  # Developer ID-signed, notarized and stapled build/Glint-<version>.dmg
 build/Glint.app/Contents/MacOS/Glint --self-test
 build/Glint.app/Contents/MacOS/Glint --demo-editor   # opens the editor on a generated sample image
 ```
 
+`build.sh release` needs a "Developer ID Application" certificate in your keychain and a notarytool profile named `notary`, saved once with `xcrun notarytool store-credentials notary --key AuthKey_<id>.p8 --key-id <id> --issuer <issuer id>`.
+
 `build.sh` signs with your first "Apple Development" identity when you have one. A stable signature keeps the Screen Recording permission across rebuilds; without one, it signs ad hoc.
 
-Pushing a `v*` tag runs the **Build DMG** workflow, which attaches `Glint-<version>.dmg` to a GitHub release.
+Pushing a `v*` tag runs the **Build DMG** workflow, which signs, notarizes and attaches `Glint-<version>.dmg` to a GitHub release. It needs the repository secrets `DEVELOPER_ID_P12`, `DEVELOPER_ID_P12_PASSWORD`, `NOTARY_KEY_P8`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`. Pushes to `main` build an unsigned test DMG.
 
 ## Project layout
 
