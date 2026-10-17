@@ -99,6 +99,7 @@ struct Background: Equatable {
     var align = 4 // 3×3 grid, row-major; 4 = centre
     var ratio: CGFloat? // width / height; nil = Auto
     var frame: DeviceFrame? // replaces the plain card (inset and corners) with a window or device
+    var card: ShareCard?    // title + subtitle at an exact export size
 }
 
 struct Doc {
@@ -112,11 +113,50 @@ struct Doc {
 
     var imageSize: CGSize { CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale) }
 
-    /// Canvas size and where the image sits on it (the background tool adds padding around it).
-    var layout: (canvas: CGSize, origin: CGPoint) {
-        guard let bg = background else { return (imageSize, .zero) }
+    /// Canvas size, where the image sits on it, and (with a share card) where its text goes.
+    struct Layout { var canvas: CGSize, origin: CGPoint, text: CGRect? }
+
+    var layout: (canvas: CGSize, origin: CGPoint) { let l = fullLayout; return (l.canvas, l.origin) }
+
+    var fullLayout: Layout {
+        guard let bg = background else { return Layout(canvas: imageSize, origin: .zero, text: nil) }
         let fi = bg.frame?.insets(for: imageSize) ?? DeviceFrame.Insets(top: bg.inset, left: bg.inset, bottom: bg.inset, right: bg.inset)
         let content = CGSize(width: imageSize.width + fi.left + fi.right, height: imageSize.height + fi.top + fi.bottom)
+
+        // Share card: text above / below / beside the content, the whole group centred on a canvas of the preset's aspect.
+        if let card = bg.card {
+            let p = bg.padding, gap = max(24, content.width * 0.05)
+            let text = card.attributed(reference: content.width, color: .white)
+            var textSize = CGSize.zero, group: CGSize
+            switch card.position {
+            case .above, .below:
+                if card.hasText { textSize = ShareCard.measure(text, width: content.width) }
+                group = CGSize(width: max(content.width, textSize.width), height: content.height + (card.hasText ? textSize.height + gap : 0))
+            case .beside:
+                if card.hasText { textSize = ShareCard.measure(text, width: content.width * 0.55) }
+                group = CGSize(width: content.width + (card.hasText ? textSize.width + gap : 0), height: max(content.height, textSize.height))
+            }
+            var canvas = CGSize(width: group.width + 2 * p, height: group.height + 2 * p)
+            let r = card.preset.pixels.width / card.preset.pixels.height
+            if canvas.width / canvas.height < r { canvas.width = canvas.height * r } else { canvas.height = canvas.width / r }
+            let g = CGPoint(x: (canvas.width - group.width) / 2, y: (canvas.height - group.height) / 2)
+            var contentAt = g, textRect = CGRect.zero
+            switch card.position {
+            case .above:
+                textRect = CGRect(x: (canvas.width - content.width) / 2, y: g.y, width: content.width, height: textSize.height)
+                contentAt = CGPoint(x: (canvas.width - content.width) / 2, y: g.y + (card.hasText ? textSize.height + gap : 0))
+            case .below:
+                contentAt = CGPoint(x: (canvas.width - content.width) / 2, y: g.y)
+                textRect = CGRect(x: contentAt.x, y: g.y + content.height + gap, width: content.width, height: textSize.height)
+            case .beside:
+                textRect = CGRect(x: g.x, y: (canvas.height - textSize.height) / 2, width: textSize.width, height: textSize.height)
+                contentAt = CGPoint(x: g.x + (card.hasText ? textSize.width + gap : 0), y: (canvas.height - content.height) / 2)
+            }
+            return Layout(canvas: CGSize(width: canvas.width.rounded(), height: canvas.height.rounded()),
+                          origin: CGPoint(x: (contentAt.x + fi.left).rounded(), y: (contentAt.y + fi.top).rounded()),
+                          text: card.hasText ? textRect : nil)
+        }
+
         var canvas = CGSize(width: content.width + 2 * bg.padding, height: content.height + 2 * bg.padding)
         if let r = bg.ratio {
             if canvas.width / canvas.height < r { canvas.width = canvas.height * r } else { canvas.height = canvas.width / r }
@@ -125,7 +165,7 @@ struct Doc {
         let ax = CGFloat(bg.align % 3) / 2, ay = CGFloat(bg.align / 3) / 2
         let origin = CGPoint(x: ((canvas.width - content.width) * ax + fi.left).rounded(),
                              y: ((canvas.height - content.height) * ay + fi.top).rounded())
-        return (CGSize(width: canvas.width.rounded(), height: canvas.height.rounded()), origin)
+        return Layout(canvas: CGSize(width: canvas.width.rounded(), height: canvas.height.rounded()), origin: origin, text: nil)
     }
 
     func label(_ n: Int) -> String {
@@ -235,7 +275,14 @@ enum Render {
         NSGraphicsContext.current = ns
         defer { NSGraphicsContext.restoreGraphicsState() }
 
-        if let bg = doc.background { drawBackground(bg, doc: doc, canvas: canvas, origin: origin, in: ctx) }
+        if let bg = doc.background {
+            drawBackground(bg, doc: doc, canvas: canvas, origin: origin, in: ctx)
+            if let card = bg.card, let rect = doc.fullLayout.text {
+                let content = doc.imageSize.width + (bg.frame.map { f in let i = f.insets(for: doc.imageSize); return i.left + i.right } ?? 2 * bg.inset)
+                card.attributed(reference: content, color: ShareCard.textColor(for: bg.fill))
+                    .draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+            }
+        }
         ctx.saveGState()
         ctx.translateBy(x: origin.x, y: origin.y)
 
@@ -284,6 +331,16 @@ enum Render {
     /// Flattened export at full pixel resolution.
     static func flatten(_ doc: Doc) -> CGImage? {
         let canvas = doc.layout.canvas
+        if let preset = doc.background?.card?.preset { // share card: render straight at the preset's exact pixel size
+            let px = preset.pixels, k = min(px.width / canvas.width, px.height / canvas.height)
+            guard let ctx = CGContext(data: nil, width: Int(px.width), height: Int(px.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            ctx.translateBy(x: (px.width - canvas.width * k) / 2, y: px.height - (px.height - canvas.height * k) / 2)
+            ctx.scaleBy(x: k, y: -k)
+            draw(doc, in: ctx)
+            return ctx.makeImage()
+        }
         let w = Int((canvas.width * doc.scale).rounded()), h = Int((canvas.height * doc.scale).rounded())
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,

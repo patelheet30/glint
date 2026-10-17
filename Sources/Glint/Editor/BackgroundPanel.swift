@@ -14,6 +14,10 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
     private var frameButtons: [(DeviceFrame.Style?, EButton)] = []
     private let frameLook = NSSegmentedControl(labels: ["Auto", "Light", "Dark"], trackingMode: .selectOne, target: nil, action: nil)
     private let frameText = NSTextField()
+    private let cardSize = NSPopUpButton()
+    private let cardTitle = NSTextField(), cardSubtitle = NSTextField()
+    private let cardPosition = NSSegmentedControl(labels: ["Above", "Below", "Beside"], trackingMode: .selectOne, target: nil, action: nil)
+    private let cardStyle = NSSegmentedControl(labels: ShareCard.TextStyle.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
     private static let ratios: [(String, CGFloat?)] = [("Auto", nil), ("1 : 1", 1), ("4 : 3", 4.0 / 3), ("3 : 2", 3.0 / 2), ("16 : 10", 1.6), ("16 : 9", 16.0 / 9), ("9 : 16", 9.0 / 16)]
 
     init(editor: Editor) {
@@ -90,6 +94,34 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
         frameText.delegate = self
         content.addSubview(frameText)
         y += 40
+
+        // Card: title + subtitle laid out with the screenshot at an exact social / README size.
+        y = section("Card", y)
+        cardSize.frame = CGRect(x: 10, y: y - 2, width: 230, height: 26)
+        cardSize.addItem(withTitle: "Off")
+        ShareCard.Preset.allCases.forEach { cardSize.addItem(withTitle: $0.label) }
+        cardSize.target = self
+        cardSize.action = #selector(cardSizeChanged)
+        content.addSubview(cardSize)
+        y += 32
+        for (field, placeholder) in [(cardTitle, "Title"), (cardSubtitle, "Subtitle or @handle")] {
+            field.frame = CGRect(x: 12, y: y, width: 226, height: 24)
+            field.controlSize = .small
+            field.font = .systemFont(ofSize: 12)
+            field.placeholderString = placeholder
+            field.delegate = self
+            content.addSubview(field)
+            y += 30
+        }
+        for seg in [cardPosition, cardStyle] {
+            seg.frame = CGRect(x: 12, y: y, width: 226, height: 24)
+            seg.controlSize = .small
+            seg.target = self
+            seg.action = #selector(cardOptionChanged)
+            content.addSubview(seg)
+            y += 30
+        }
+        y += 10
 
         y = section("Gradients", y)
         for i in 0..<Render.gradients.count {
@@ -209,12 +241,35 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
         set { $0.frame?.appearance = DeviceFrame.Appearance(rawValue: self.frameLook.selectedSegment) ?? .auto }
     }
 
-    func controlTextDidChange(_ obj: Notification) {
-        set({ $0.frame?.text = self.frameText.stringValue }, coalesce: true)
+    func controlTextDidChange(_ obj: Notification) { applyText(obj, coalesce: true) }
+    func controlTextDidEndEditing(_ obj: Notification) { applyText(obj, coalesce: false) } // one undo step per edit
+
+    private func applyText(_ obj: Notification, coalesce: Bool) {
+        let field = obj.object as? NSTextField
+        set({ bg in
+            if field === self.frameText { bg.frame?.text = self.frameText.stringValue }
+            if field === self.cardTitle { bg.card?.title = self.cardTitle.stringValue }
+            if field === self.cardSubtitle { bg.card?.subtitle = self.cardSubtitle.stringValue }
+        }, coalesce: coalesce)
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) { // one undo step per edit
-        set { $0.frame?.text = self.frameText.stringValue }
+    @objc private func cardSizeChanged() {
+        guard let editor else { return }
+        let i = cardSize.indexOfSelectedItem
+        guard i > 0, let preset = ShareCard.Preset(rawValue: i - 1) else { return set { $0.card = nil } }
+        if editor.doc.background == nil {
+            var bg = Background(fill: .gradient(0)); bg.card = ShareCard(preset: preset)
+            editor.setBackground(bg); refresh()
+        } else {
+            set { bg in var c = bg.card ?? ShareCard(); c.preset = preset; bg.card = c }
+        }
+    }
+
+    @objc private func cardOptionChanged() {
+        set { bg in
+            bg.card?.position = ShareCard.Position(rawValue: self.cardPosition.selectedSegment) ?? .above
+            bg.card?.style = ShareCard.TextStyle(rawValue: self.cardStyle.selectedSegment) ?? .bold
+        }
     }
 
     @objc private func ratioChanged() { set { $0.ratio = Self.ratios[self.ratio.indexOfSelectedItem].1 } }
@@ -238,6 +293,14 @@ final class BackgroundPanel: NSView, NSTextFieldDelegate {
         frameText.isEnabled = frame?.style.hasText == true
         frameText.placeholderString = frame?.style == .browser ? "Address (example.com)" : "Window title"
         if frameText.currentEditor() == nil { frameText.stringValue = frame?.text ?? "" }
+        let card = bg?.card
+        cardSize.selectItem(at: card.map { $0.preset.rawValue + 1 } ?? 0)
+        for c in [cardTitle, cardSubtitle] as [NSControl] { c.isEnabled = card != nil }
+        for c in [cardPosition, cardStyle] { c.isEnabled = card != nil }
+        if cardTitle.currentEditor() == nil { cardTitle.stringValue = card?.title ?? "" }
+        if cardSubtitle.currentEditor() == nil { cardSubtitle.stringValue = card?.subtitle ?? "" }
+        cardPosition.selectedSegment = card?.position.rawValue ?? 0
+        cardStyle.selectedSegment = card?.style.rawValue ?? 0
     }
 
     private func chooseWallpaper() {

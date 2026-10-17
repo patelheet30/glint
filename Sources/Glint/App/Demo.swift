@@ -28,6 +28,15 @@ enum Demo {
                 write(doc, "frame-\(style)-\(look)")
             }
         }
+        for (preset, pos, style) in [(ShareCard.Preset.x, ShareCard.Position.above, ShareCard.TextStyle.bold),
+                                     (.openGraph, .beside, .editorial), (.square, .below, .mono), (.story, .above, .bold)] {
+            var doc = Doc(image: shot, scale: 2)
+            var bg = Background(fill: .gradient(preset.rawValue + 9)); bg.padding = 80
+            bg.frame = DeviceFrame(style: .macWindow, appearance: .light, text: "Quarterly overview")
+            bg.card = ShareCard(title: "Quarterly numbers, at a glance", subtitle: "@glintapp · new in v0.3", preset: preset, position: pos, style: style)
+            doc.background = bg
+            write(doc, "card-\(preset)-\(pos)")
+        }
         var phone = Doc(image: sample(width: 390, height: 844), scale: 2)
         var bg = Background(fill: .gradient(7)); bg.frame = DeviceFrame(style: .iPhone); phone.background = bg
         write(phone, "frame-iPhone-portrait")
